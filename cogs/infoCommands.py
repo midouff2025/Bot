@@ -19,6 +19,7 @@ class InfoCommands(commands.Cog):
         self.bot = bot
         self.api_url = "https://rawthug.onrender.com/info"
         self.generate_url = "https://profile-generator.up.railway.app/api/profile"
+        self.card_url = "https://profile-generator.up.railway.app/api/profile_card"
         self.session = aiohttp.ClientSession()
         self.config_data = self.load_config()
         self.cooldowns = {}
@@ -237,24 +238,12 @@ class InfoCommands(commands.Cog):
                     ])
                 embed.add_field(name="", value="\n".join(guild_info), inline=False)
 
+            # ✅ نجرب نضيف صورة البروفايل كارد داخل الـ Embed
+            card_image_url = f"{self.card_url}?uid={uid}"
+            embed.set_image(url=card_image_url)
+
             embed.set_footer(text="DEVELOPED BY MIDOU X CHEAT")
             await ctx.send(embed=embed)
-
-            if region and uid:
-                try:
-                    image_url = f"{self.generate_url}?uid={uid}"
-                    print(f"Url d'image = {image_url}")
-                    if image_url:
-                        async with self.session.get(image_url) as img_file:
-                            if img_file.status == 200:
-                                with io.BytesIO(await img_file.read()) as buf:
-                                    file = discord.File(buf, filename=f"outfit_{uuid.uuid4().hex[:8]}.png")
-                                    await ctx.send(file=file)
-                                    print("Image envoyée avec succès")
-                            else:
-                                print(f"Erreur HTTP: {img_file.status}")
-                except Exception as e:
-                    print("Image generation failed:", e)
 
         except Exception as e:
             await ctx.send(f" Unexpected error: `{e}`")
@@ -263,29 +252,6 @@ class InfoCommands(commands.Cog):
 
     async def cog_unload(self):
         await self.session.close()
-
-    async def _send_player_not_found(self, ctx, uid):
-        embed = discord.Embed(
-            title="❌ Player Not Found",
-            description=(
-                f"UID `{uid}` not found or inaccessible.\n\n"
-                "⚠️ **Note:** IND servers are currently not working."
-            ),
-            color=discord.Color.red()
-        )
-        embed.add_field(
-            name="Tip",
-            value="- Make sure the UID is correct\n- Try a different UID",
-            inline=False
-        )
-        await ctx.send(embed=embed, ephemeral=True)
-
-    async def _send_api_error(self, ctx):
-        await ctx.send(embed=discord.Embed(
-            title="⚠️ API Error",
-            description="The Free Fire API is not responding. Try again later.",
-            color=discord.Color.gold()
-        ))
 
 
 async def setup(bot):
