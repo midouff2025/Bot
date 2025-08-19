@@ -19,6 +19,7 @@ class InfoCommands(commands.Cog):
         self.generate_url = "https://profile-generator.up.railway.app/api/profile"
         self.session = aiohttp.ClientSession()
         self.config_data = self.load_config()
+        self.cooldowns = {}
 
     def convert_unix_timestamp(self, timestamp: int) -> str:
         try:
@@ -31,6 +32,7 @@ class InfoCommands(commands.Cog):
             "servers": {},
             "global_settings": {
                 "default_all_channels": False,
+                "default_cooldown": 30,
                 "default_daily_limit": 30
             }
         }
@@ -40,6 +42,7 @@ class InfoCommands(commands.Cog):
                     loaded_config = json.load(f)
                     loaded_config.setdefault("global_settings", {})
                     loaded_config["global_settings"].setdefault("default_all_channels", False)
+                    loaded_config["global_settings"].setdefault("default_cooldown", 30)
                     loaded_config["global_settings"].setdefault("default_daily_limit", 30)
                     loaded_config.setdefault("servers", {})
                     return loaded_config
@@ -59,7 +62,6 @@ class InfoCommands(commands.Cog):
         # السماح فقط للقناة المسموح بها
         return ctx.channel.id == ALLOWED_CHANNEL_ID
 
-    # ────────────── إدارة القنوات ──────────────
     @commands.hybrid_command(name="setinfochannel", description="Allow a channel for !info commands")
     @commands.has_permissions(administrator=True)
     async def set_info_channel(self, ctx: commands.Context, channel: discord.TextChannel):
@@ -107,7 +109,6 @@ class InfoCommands(commands.Cog):
             )
         await ctx.send(embed=embed)
 
-    # ────────────── معلومات اللاعب ──────────────
     @commands.hybrid_command(name="info", description="Displays information about a Free Fire player")
     @app_commands.describe(uid="FREE FIRE INFO")
     async def player_info(self, ctx: commands.Context, uid: str):
@@ -116,13 +117,26 @@ class InfoCommands(commands.Cog):
             embed = discord.Embed(
                 title="⚠️ Command Not Allowed",
                 description="This command is only allowed in the designated channel.",
-                color=discord.Color.gold()
+                color=discord.Color.gold()  # اللون الأصفر
             )
             await ctx.send(embed=embed)
-            return
+            return  # توقف التنفيذ هنا
 
         if not uid.isdigit() or len(uid) < 6:
             return await ctx.reply("❌ Invalid UID! Must be numeric with at least 6 digits.", mention_author=False)
+
+        cooldown = self.config_data["global_settings"]["default_cooldown"]
+        guild_id = str(ctx.guild.id)
+        if guild_id in self.config_data["servers"]:
+            cooldown = self.config_data["servers"][guild_id]["config"].get("cooldown", cooldown)
+
+        if ctx.author.id in self.cooldowns:
+            last_used = self.cooldowns[ctx.author.id]
+            if (datetime.now() - last_used).seconds < cooldown:
+                remaining = cooldown - (datetime.now() - last_used).seconds
+                return await ctx.send(f"⏱ Please wait {remaining}s before using this command again", ephemeral=True)
+
+        self.cooldowns[ctx.author.id] = datetime.now()
 
         try:
             async with ctx.typing():
@@ -153,7 +167,7 @@ class InfoCommands(commands.Cog):
 
             # ───────── ACCOUNT BASIC INFO ─────────
             embed.add_field(name="", value="\n".join([
-                "**┌ ACCOUNT BASIC INFO**",
+                "**┌  ACCOUNT BASIC INFO**",
                 f"**├─ Name**: {basic_info.get('nickname', 'Not found')}",
                 f"**├─ UID**: {uid}",
                 f"**├─ Level**: {basic_info.get('level', 'Not found')} (Exp: {basic_info.get('exp', '?')})",
@@ -165,7 +179,7 @@ class InfoCommands(commands.Cog):
 
             # ───────── ACCOUNT ACTIVITY ─────────
             embed.add_field(name="", value="\n".join([
-                "**┌ ACCOUNT ACTIVITY**",
+                "**┌  ACCOUNT ACTIVITY**",
                 f"**├─ Most Recent OB**: {basic_info.get('releaseVersion', '?')}",
                 f"**├─ Current BP Badges**: {basic_info.get('badgeCnt', 'Not found')}",
                 f"**├─ BR Rank**: {basic_info.get('rankingPoints', '?')}",
@@ -176,7 +190,7 @@ class InfoCommands(commands.Cog):
 
             # ───────── ACCOUNT OVERVIEW ─────────
             embed.add_field(name="", value="\n".join([
-                "**┌ ACCOUNT OVERVIEW**",
+                "**┌  ACCOUNT OVERVIEW**",
                 f"**├─ Avatar ID**: {profile_info.get('avatarId', 'Not found')}",
                 f"**├─ Banner ID**: {basic_info.get('bannerId', 'Not found')}",
                 f"**├─ Pin ID**: {captain_info.get('pinId', 'Default') if captain_info else 'Default'}",
@@ -185,7 +199,7 @@ class InfoCommands(commands.Cog):
 
             # ───────── PET DETAILS ─────────
             embed.add_field(name="", value="\n".join([
-                "**┌ PET DETAILS**",
+                "**┌  PET DETAILS**",
                 f"**├─ Equipped?**: {'Yes' if pet_info.get('isSelected') else 'Not Found'}",
                 f"**├─ Pet Name**: {pet_info.get('name', 'Not Found')}",
                 f"**├─ Pet Exp**: {pet_info.get('exp', 'Not Found')}",
