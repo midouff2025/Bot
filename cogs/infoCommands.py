@@ -11,6 +11,7 @@ import uuid
 import gc
 
 CONFIG_FILE = "info_channels.json"
+ALLOWED_CHANNEL_ID = 1403048599054454935  # هنا ضعنا الـ ID الخاص بالقناة المسموح بها
 
 class InfoCommands(commands.Cog):
     def __init__(self, bot):
@@ -60,62 +61,8 @@ class InfoCommands(commands.Cog):
             print(f"Error saving config: {e}")
 
     async def is_channel_allowed(self, ctx):
-        try:
-            guild_id = str(ctx.guild.id)
-            allowed_channels = self.config_data["servers"].get(guild_id, {}).get("info_channels", [])
-            if not allowed_channels:
-                return True
-            return str(ctx.channel.id) in allowed_channels
-        except Exception as e:
-            print(f"Error checking channel permission: {e}")
-            return False
-
-    @commands.hybrid_command(name="setinfochannel", description="Allow a channel for !info commands")
-    @commands.has_permissions(administrator=True)
-    async def set_info_channel(self, ctx: commands.Context, channel: discord.TextChannel):
-        guild_id = str(ctx.guild.id)
-        self.config_data["servers"].setdefault(guild_id, {"info_channels": [], "config": {}})
-        if str(channel.id) not in self.config_data["servers"][guild_id]["info_channels"]:
-            self.config_data["servers"][guild_id]["info_channels"].append(str(channel.id))
-            self.save_config()
-            await ctx.send(f"✅ {channel.mention} is now allowed for !info commands")
-        else:
-            await ctx.send(f"ℹ️ {channel.mention} is already allowed for !info commands")
-
-    @commands.hybrid_command(name="removeinfochannel", description="Remove a channel from !info commands")
-    @commands.has_permissions(administrator=True)
-    async def remove_info_channel(self, ctx: commands.Context, channel: discord.TextChannel):
-        guild_id = str(ctx.guild.id)
-        if guild_id in self.config_data["servers"]:
-            if str(channel.id) in self.config_data["servers"][guild_id]["info_channels"]:
-                self.config_data["servers"][guild_id]["info_channels"].remove(str(channel.id))
-                self.save_config()
-                await ctx.send(f"✅ {channel.mention} has been removed from allowed channels")
-            else:
-                await ctx.send(f"❌ {channel.mention} is not in the list of allowed channels")
-        else:
-            await ctx.send("ℹ️ This server has no saved configuration")
-
-    @commands.hybrid_command(name="infochannels", description="List allowed channels")
-    async def list_info_channels(self, ctx: commands.Context):
-        guild_id = str(ctx.guild.id)
-        if guild_id in self.config_data["servers"] and self.config_data["servers"][guild_id]["info_channels"]:
-            channels = []
-            for channel_id in self.config_data["servers"][guild_id]["info_channels"]:
-                channel = ctx.guild.get_channel(int(channel_id))
-                channels.append(f"• {channel.mention if channel else f'ID: {channel_id}'}")
-            embed = discord.Embed(
-                title="Allowed channels for !info",
-                description="\n".join(channels),
-                color=discord.Color.green()
-            )
-        else:
-            embed = discord.Embed(
-                title="Allowed channels for !info",
-                description="All channels are allowed (no restriction configured)",
-                color=discord.Color.green()
-            )
-        await ctx.send(embed=embed)
+        # ✅ السماح فقط للقناة المحددة
+        return ctx.channel.id == ALLOWED_CHANNEL_ID
 
     @commands.hybrid_command(name="info", description="Displays information about a Free Fire player")
     @app_commands.describe(uid="FREE FIRE INFO")
@@ -123,7 +70,7 @@ class InfoCommands(commands.Cog):
         if not uid.isdigit() or len(uid) < 6:
             return await ctx.reply("❌ Invalid UID! Must be numeric with at least 6 digits.", mention_author=False)
         if not await self.is_channel_allowed(ctx):
-            return await ctx.send("⚠️ This command is not allowed in this channel.", ephemeral=True)
+            return await ctx.send("⚠️ This command is only allowed in the designated channel.", ephemeral=True)
 
         cooldown = self.config_data["global_settings"]["default_cooldown"]
         guild_id = str(ctx.guild.id)
@@ -147,7 +94,6 @@ class InfoCommands(commands.Cog):
                         return await ctx.send("⚠️ API error. Try again later.")
                     data = await response.json()
 
-            # ✅ التعديل الأساسي: استخدام profile_info
             profile_data = data.get('profile_info', {})
             basic_info = profile_data.get('basicInfo', {})
             captain_info = profile_data.get('captainBasicInfo', {})
@@ -161,12 +107,11 @@ class InfoCommands(commands.Cog):
 
             embed = discord.Embed(
                 title=f"🎮 Player Information",
-                color=discord.Color.blue(),
+                color=discord.Color.teal(),  # أزرق سماوي
                 timestamp=datetime.now()
             )
             embed.set_thumbnail(url=ctx.author.display_avatar.url)
 
-            # ───────── ACCOUNT BASIC INFO ─────────
             embed.add_field(name="", value="\n".join([
                 "**┌  ACCOUNT BASIC INFO**",
                 f"**├─ Name**: {basic_info.get('nickname', 'Not found')}",
@@ -178,7 +123,6 @@ class InfoCommands(commands.Cog):
                 f"**└─ Signature**: {social_info.get('signature', 'None') or 'None'}"
             ]), inline=False)
 
-            # ───────── ACCOUNT ACTIVITY ─────────
             embed.add_field(name="", value="\n".join([
                 "**┌  ACCOUNT ACTIVITY**",
                 f"**├─ Most Recent OB**: {basic_info.get('releaseVersion', '?')}",
@@ -189,7 +133,6 @@ class InfoCommands(commands.Cog):
                 f"**└─ Last Login**: {self.convert_unix_timestamp(basic_info.get('lastLoginAt', 0))}"
             ]), inline=False)
 
-            # ───────── ACCOUNT OVERVIEW ─────────
             embed.add_field(name="", value="\n".join([
                 "**┌  ACCOUNT OVERVIEW**",
                 f"**├─ Avatar ID**: {profile_info.get('avatarId', 'Not found')}",
@@ -198,7 +141,6 @@ class InfoCommands(commands.Cog):
                 f"**└─ Equipped Skills**: {profile_info.get('equipedSkills', 'Not found')}"
             ]), inline=False)
 
-            # ───────── PET DETAILS ─────────
             embed.add_field(name="", value="\n".join([
                 "**┌  PET DETAILS**",
                 f"**├─ Equipped?**: {'Yes' if pet_info.get('isSelected') else 'Not Found'}",
@@ -208,10 +150,9 @@ class InfoCommands(commands.Cog):
             ]), inline=False)
 
             embed.set_footer(text="DEVELOPED BY MIDOU X CHEAT")
-
             await ctx.send(embed=embed)
 
-            # ───────── IMAGE ─────────
+            # IMAGE
             image_url = f"{self.generate_url}?uid={uid}"
             async with self.session.get(image_url) as img_file:
                 if img_file.status == 200:
