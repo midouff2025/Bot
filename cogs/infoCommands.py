@@ -1,3 +1,4 @@
+import discord
 from discord.ext import commands
 from discord import app_commands
 import aiohttp
@@ -7,7 +8,6 @@ import os
 import io
 import uuid
 import gc
-import discord  # تأكد من استيراده لأنه مستخدم في listener
 
 CONFIG_FILE = "info_channels.json"
 ALLOWED_CHANNEL_ID = 1403048599054454935  # القناة المسموح بها فقط
@@ -59,26 +59,9 @@ class InfoCommands(commands.Cog):
             print(f"Error saving config: {e}")
 
     async def is_channel_allowed(self, ctx):
-        # السماح فقط للقناة المسموح بها
         return ctx.channel.id == ALLOWED_CHANNEL_ID
 
-    # ───── Listener لحذف الرسائل غير المسموح بها ─────
-    @commands.Cog.listener()
-    async def on_message(self, message):
-        if message.author.bot:
-            return  # تجاهل رسائل البوت
-
-        if not message.content.startswith("!"):
-            try:
-                await message.delete()
-            except discord.Forbidden:
-                print(f"⚠️ لا توجد صلاحيات لحذف الرسالة في {message.channel}")
-            except discord.HTTPException as e:
-                print(f"⚠️ خطأ عند حذف الرسالة: {e}")
-
-        await self.bot.process_commands(message)  # لمعالجة أوامر البوت
-
-    # ───── باقي أوامر البوت كما هي ─────
+    # ────────────── إدارة القنوات ──────────────
     @commands.hybrid_command(name="setinfochannel", description="Allow a channel for !info commands")
     @commands.has_permissions(administrator=True)
     async def set_info_channel(self, ctx: commands.Context, channel: discord.TextChannel):
@@ -126,18 +109,18 @@ class InfoCommands(commands.Cog):
             )
         await ctx.send(embed=embed)
 
+    # ────────────── معلومات اللاعب ──────────────
     @commands.hybrid_command(name="info", description="Displays information about a Free Fire player")
     @app_commands.describe(uid="FREE FIRE INFO")
     async def player_info(self, ctx: commands.Context, uid: str):
-        # التحقق من القناة
         if not await self.is_channel_allowed(ctx):
             embed = discord.Embed(
                 title="⚠️ Command Not Allowed",
                 description="This command is only allowed in the designated channel.",
-                color=discord.Color.gold()  # اللون الأصفر
+                color=discord.Color.gold()
             )
             await ctx.send(embed=embed)
-            return  # توقف التنفيذ هنا
+            return
 
         if not uid.isdigit() or len(uid) < 6:
             return await ctx.reply("❌ Invalid UID! Must be numeric with at least 6 digits.", mention_author=False)
@@ -239,6 +222,24 @@ class InfoCommands(commands.Cog):
             await ctx.send(f"⚠️ Unexpected error: {e}")
         finally:
             gc.collect()
+
+    # ────────────── ميزة حذف الرسائل التي لا تبدأ بـ ! ──────────────
+    @commands.Cog.listener()
+    async def on_message(self, message: discord.Message):
+        if message.author.bot:
+            return
+
+        guild_id = str(message.guild.id)
+        if guild_id in self.config_data["servers"]:
+            allowed_channels = self.config_data["servers"][guild_id]["info_channels"]
+            if str(message.channel.id) in allowed_channels:
+                if not message.content.startswith("!"):
+                    try:
+                        await message.delete()
+                    except discord.Forbidden:
+                        print(f"Cannot delete message in {message.channel.name}")
+                    except discord.HTTPException as e:
+                        print(f"Failed to delete message: {e}")
 
     async def cog_unload(self):
         await self.session.close()
