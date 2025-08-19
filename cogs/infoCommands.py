@@ -19,7 +19,6 @@ class InfoCommands(commands.Cog):
         self.generate_url = "https://profile-generator.up.railway.app/api/profile"
         self.session = aiohttp.ClientSession()
         self.config_data = self.load_config()
-        self.cooldowns = {}
 
     def convert_unix_timestamp(self, timestamp: int) -> str:
         try:
@@ -32,7 +31,6 @@ class InfoCommands(commands.Cog):
             "servers": {},
             "global_settings": {
                 "default_all_channels": False,
-                "default_cooldown": 30,
                 "default_daily_limit": 30
             }
         }
@@ -42,7 +40,6 @@ class InfoCommands(commands.Cog):
                     loaded_config = json.load(f)
                     loaded_config.setdefault("global_settings", {})
                     loaded_config["global_settings"].setdefault("default_all_channels", False)
-                    loaded_config["global_settings"].setdefault("default_cooldown", 30)
                     loaded_config["global_settings"].setdefault("default_daily_limit", 30)
                     loaded_config.setdefault("servers", {})
                     return loaded_config
@@ -59,7 +56,6 @@ class InfoCommands(commands.Cog):
             print(f"Error saving config: {e}")
 
     async def is_channel_allowed(self, ctx):
-        # السماح فقط للقناة المسموح بها
         return ctx.channel.id == ALLOWED_CHANNEL_ID
 
     @commands.hybrid_command(name="setinfochannel", description="Allow a channel for !info commands")
@@ -120,23 +116,10 @@ class InfoCommands(commands.Cog):
                 color=discord.Color.gold()
             )
             await ctx.send(embed=embed)
-            return  # توقف التنفيذ هنا
+            return
 
         if not uid.isdigit() or len(uid) < 6:
             return await ctx.reply("❌ Invalid UID! Must be numeric with at least 6 digits.", mention_author=False)
-
-        cooldown = self.config_data["global_settings"]["default_cooldown"]
-        guild_id = str(ctx.guild.id)
-        if guild_id in self.config_data["servers"]:
-            cooldown = self.config_data["servers"][guild_id]["config"].get("cooldown", cooldown)
-
-        if ctx.author.id in self.cooldowns:
-            last_used = self.cooldowns[ctx.author.id]
-            if (datetime.now() - last_used).seconds < cooldown:
-                remaining = cooldown - (datetime.now() - last_used).seconds
-                return await ctx.send(f"⏱ Please wait {remaining}s before using this command again", ephemeral=True)
-
-        self.cooldowns[ctx.author.id] = datetime.now()
 
         try:
             async with ctx.typing():
@@ -165,7 +148,6 @@ class InfoCommands(commands.Cog):
             )
             embed.set_thumbnail(url=ctx.author.display_avatar.url)
 
-            # ───────── ACCOUNT BASIC INFO ─────────
             embed.add_field(name="", value="\n".join([
                 "**┌  ACCOUNT BASIC INFO**",
                 f"**├─ Name**: {basic_info.get('nickname', 'Not found')}",
@@ -177,7 +159,6 @@ class InfoCommands(commands.Cog):
                 f"**└─ Signature**: {social_info.get('signature', 'None') or 'None'}"
             ]), inline=False)
 
-            # ───────── ACCOUNT ACTIVITY ─────────
             embed.add_field(name="", value="\n".join([
                 "**┌  ACCOUNT ACTIVITY**",
                 f"**├─ Most Recent OB**: {basic_info.get('releaseVersion', '?')}",
@@ -188,7 +169,6 @@ class InfoCommands(commands.Cog):
                 f"**└─ Last Login**: {self.convert_unix_timestamp(basic_info.get('lastLoginAt', 0))}"
             ]), inline=False)
 
-            # ───────── ACCOUNT OVERVIEW ─────────
             embed.add_field(name="", value="\n".join([
                 "**┌  ACCOUNT OVERVIEW**",
                 f"**├─ Avatar ID**: {profile_info.get('avatarId', 'Not found')}",
@@ -197,7 +177,6 @@ class InfoCommands(commands.Cog):
                 f"**└─ Equipped Skills**: {profile_info.get('equipedSkills', 'Not found')}"
             ]), inline=False)
 
-            # ───────── PET DETAILS ─────────
             embed.add_field(name="", value="\n".join([
                 "**┌  PET DETAILS**",
                 f"**├─ Equipped?**: {'Yes' if pet_info.get('isSelected') else 'Not Found'}",
@@ -229,17 +208,3 @@ class InfoCommands(commands.Cog):
 
 async def setup(bot):
     await bot.add_cog(InfoCommands(bot))
-
-# --- Event Listener: حذف الرسائل في القناة المسموح بها فقط ---
-@commands.Cog.listener()
-async def on_message(message):
-    if message.author.bot:
-        return  # تجاهل رسائل البوت
-
-    if message.channel.id == ALLOWED_CHANNEL_ID:
-        if not message.content.startswith("!"):  # حذف الرسائل غير أوامر البوت
-            try:
-                await message.delete()
-            except discord.Forbidden:
-                print(f"⚠️ Missing permissions to delete message in {message.channel}")
-            return
