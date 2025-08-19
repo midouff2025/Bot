@@ -5,7 +5,6 @@ import aiohttp
 from datetime import datetime
 import json
 import os
-import asyncio
 import io
 import uuid
 import gc
@@ -23,7 +22,7 @@ class InfoCommands(commands.Cog):
 
     def convert_unix_timestamp(self, timestamp: int) -> str:
         try:
-            return datetime.utcfromtimestamp(timestamp).strftime('%Y-%m-%d %H:%M:%S')
+            return datetime.utcfromtimestamp(int(timestamp)).strftime('%Y-%m-%d %H:%M:%S')
         except Exception:
             return "Not found"
 
@@ -59,15 +58,11 @@ class InfoCommands(commands.Cog):
             print(f"Error saving config: {e}")
 
     async def is_channel_allowed(self, ctx):
-        try:
-            guild_id = str(ctx.guild.id)
-            allowed_channels = self.config_data["servers"].get(guild_id, {}).get("info_channels", [])
-            if not allowed_channels:
-                return True
-            return str(ctx.channel.id) in allowed_channels
-        except Exception as e:
-            print(f"Error checking channel permission: {e}")
-            return False
+        guild_id = str(ctx.guild.id)
+        allowed_channels = self.config_data["servers"].get(guild_id, {}).get("info_channels", [])
+        if not allowed_channels:
+            return True
+        return str(ctx.channel.id) in allowed_channels
 
     @commands.hybrid_command(name="info", description="Displays information about a Free Fire player")
     @app_commands.describe(uid="FREE FIRE INFO")
@@ -98,9 +93,7 @@ class InfoCommands(commands.Cog):
                         return await ctx.send("⚠️ API error. Try again later.")
                     data = await response.json()
 
-            # --- تعديل للوصول للبنية الجديدة ---
             profile = data.get('profile_info', {})
-
             basic_info = profile.get('basicInfo', {})
             captain_info = profile.get('captainBasicInfo', {})
             clan_info = profile.get('clanBasicInfo', {})
@@ -109,58 +102,50 @@ class InfoCommands(commands.Cog):
             profile_info = profile.get('profileInfo', {})
             social_info = profile.get('socialInfo', {})
 
-            region = basic_info.get('region', 'Not found')
+            embed_text = []
+
+            # ACCOUNT BASIC INFO
+            embed_text.append("┌ ACCOUNT BASIC INFO")
+            embed_text.append(f"├─ Name: {basic_info.get('nickname', 'Not found')}")
+            embed_text.append(f"├─ UID: {uid}")
+            embed_text.append(f"├─ Level: {basic_info.get('level', 'Not found')} (Exp: {basic_info.get('exp', '?')})")
+            embed_text.append(f"├─ Region: {basic_info.get('region', 'Not found')}")
+            embed_text.append(f"├─ Likes: {basic_info.get('liked', 'Not found')}")
+            embed_text.append(f"├─ Honor Score: {credit_score_info.get('creditScore', 'Not found')}")
+            embed_text.append(f"└─ Signature: {social_info.get('signature', 'None') or 'None'}")
+
+            # ACCOUNT ACTIVITY
+            embed_text.append("┌ ACCOUNT ACTIVITY")
+            embed_text.append(f"├─ Most Recent OB: {basic_info.get('releaseVersion', '?')}")
+            embed_text.append(f"├─ Current BP Badges: {basic_info.get('badgeCnt', 'Not found')}")
+            embed_text.append(f"├─ BR Rank: {basic_info.get('rankingPoints', '?')}")
+            embed_text.append(f"├─ CS Rank: {basic_info.get('csRankingPoints', '?')}")
+            embed_text.append(f"├─ Created At: {self.convert_unix_timestamp(basic_info.get('createAt', 0))}")
+            embed_text.append(f"└─ Last Login: {self.convert_unix_timestamp(basic_info.get('lastLoginAt', 0))}")
+
+            # ACCOUNT OVERVIEW
+            embed_text.append("┌ ACCOUNT OVERVIEW")
+            embed_text.append(f"├─ Avatar ID: {profile_info.get('avatarId', 'Not found')}")
+            embed_text.append(f"├─ Banner ID: {basic_info.get('bannerId', 'Not found')}")
+            embed_text.append(f"├─ Pin ID: Default")
+            embed_text.append(f"└─ Equipped Skills: {profile_info.get('equipedSkills', 'Not found')}")
+
+            # PET DETAILS
+            embed_text.append("┌ PET DETAILS")
+            embed_text.append(f"├─ Equipped?: {'Yes' if pet_info.get('isSelected') else 'Not Found'}")
+            embed_text.append(f"├─ Pet ID: {pet_info.get('id', 'Not Found')}")
+            embed_text.append(f"├─ Pet Exp: {pet_info.get('exp', 'Not Found')}")
+            embed_text.append(f"└─ Pet Level: {pet_info.get('level', 'Not Found')}")
 
             embed = discord.Embed(
                 title="Player Information",
-                color=discord.Color.green(),
-                timestamp=datetime.now()
+                description="\n".join(embed_text),
+                color=discord.Color.green()
             )
-            embed.set_thumbnail(url=ctx.author.display_avatar.url)
-
-            embed.add_field(name="ACCOUNT BASIC INFO", value="\n".join([
-                f"Name: {basic_info.get('nickname', 'Not found')}",
-                f"UID: {uid}",
-                f"Level: {basic_info.get('level', 'Not found')} (Exp: {basic_info.get('exp', '?')})",
-                f"Region: {region}",
-                f"Likes: {basic_info.get('liked', 'Not found')}",
-                f"Honor Score: {credit_score_info.get('creditScore', 'Not found')}",
-                f"Signature: {social_info.get('signature', 'None') or 'None'}"
-            ]), inline=False)
-
-            embed.add_field(name="ACCOUNT ACTIVITY", value="\n".join([
-                f"Most Recent OB: {basic_info.get('releaseVersion', '?')}",
-                f"Current BP Badges: {basic_info.get('badgeCnt', 'Not found')}",
-                f"BR Rank: {basic_info.get('rankingPoints', '?')}",
-                f"CS Rank: {basic_info.get('csRankingPoints', '?')}",
-                f"Created At: {self.convert_unix_timestamp(int(basic_info.get('createAt', 0)))}",
-                f"Last Login: {self.convert_unix_timestamp(int(basic_info.get('lastLoginAt', 0)))}"
-            ]), inline=False)
-
-            embed.add_field(name="ACCOUNT OVERVIEW", value="\n".join([
-                f"Avatar ID: {profile_info.get('avatarId', 'Not found')}",
-                f"Equipped Skills: {profile_info.get('equipedSkills', 'Not found')}"
-            ]), inline=False)
-
-            embed.add_field(name="PET DETAILS", value="\n".join([
-                f"Equipped?: {'Yes' if pet_info.get('isSelected') else 'Not Found'}",
-                f"Pet ID: {pet_info.get('id', 'Not Found')}",
-                f"Pet Exp: {pet_info.get('exp', 'Not Found')}",
-                f"Pet Level: {pet_info.get('level', 'Not Found')}"
-            ]), inline=False)
-
-            if clan_info:
-                guild_info = [
-                    f"Guild Name: {clan_info.get('clanName', 'Not found')}",
-                    f"Guild ID: {clan_info.get('clanId', 'Not found')}",
-                    f"Guild Level: {clan_info.get('clanLevel', 'Not found')}",
-                    f"Live Members: {clan_info.get('memberNum', 'Not found')}/{clan_info.get('capacity', '?')}"
-                ]
-                embed.add_field(name="GUILD INFO", value="\n".join(guild_info), inline=False)
-
+            embed.set_footer(text="DEVELOPED BY MIDOU X CHEAT")
             await ctx.send(embed=embed)
 
-            # --- إرسال صورة اللاعب ---
+            # إرسال صورة اللاعب
             image_url = f"{self.generate_url}?uid={uid}"
             async with self.session.get(image_url) as img_file:
                 if img_file.status == 200:
