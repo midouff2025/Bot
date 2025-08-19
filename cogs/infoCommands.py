@@ -21,6 +21,26 @@ class InfoCommands(commands.Cog):
         self.config_data = self.load_config()
         self.cooldowns = {}
 
+        # تسجيل حدث on_message
+        bot.add_listener(self.on_message)
+
+    # الحدث المسؤول عن حذف الرسائل غير الأوامر فقط في القناة المسموح بها
+    async def on_message(self, message):
+        if message.author.bot:
+            return  # تجاهل رسائل البوت
+
+        if message.channel.id == ALLOWED_CHANNEL_ID:
+            if not message.content.startswith(self.bot.command_prefix):
+                try:
+                    await message.delete()
+                except discord.Forbidden:
+                    print(f"⚠️ Missing permissions to delete message in {message.channel}")
+                return  # لا نكمل معالجة الرسائل هنا
+
+        # معالجة أوامر البوت في جميع القنوات
+        await self.bot.process_commands(message)
+
+    # --- وظائف مساعدة ---
     def convert_unix_timestamp(self, timestamp: int) -> str:
         try:
             return datetime.utcfromtimestamp(int(timestamp)).strftime('%Y-%m-%d %H:%M:%S')
@@ -59,9 +79,9 @@ class InfoCommands(commands.Cog):
             print(f"Error saving config: {e}")
 
     async def is_channel_allowed(self, ctx):
-        # السماح فقط للقناة المسموح بها
         return ctx.channel.id == ALLOWED_CHANNEL_ID
 
+    # --- أوامر القناة المسموح بها ---
     @commands.hybrid_command(name="setinfochannel", description="Allow a channel for !info commands")
     @commands.has_permissions(administrator=True)
     async def set_info_channel(self, ctx: commands.Context, channel: discord.TextChannel):
@@ -109,18 +129,18 @@ class InfoCommands(commands.Cog):
             )
         await ctx.send(embed=embed)
 
+    # --- أمر اللاعب ---
     @commands.hybrid_command(name="info", description="Displays information about a Free Fire player")
     @app_commands.describe(uid="FREE FIRE INFO")
     async def player_info(self, ctx: commands.Context, uid: str):
-        # التحقق من القناة
         if not await self.is_channel_allowed(ctx):
             embed = discord.Embed(
                 title="⚠️ Command Not Allowed",
                 description="This command is only allowed in the designated channel.",
-                color=discord.Color.gold()  # اللون الأصفر
+                color=discord.Color.gold()
             )
             await ctx.send(embed=embed)
-            return  # توقف التنفيذ هنا
+            return
 
         if not uid.isdigit() or len(uid) < 6:
             return await ctx.reply("❌ Invalid UID! Must be numeric with at least 6 digits.", mention_author=False)
@@ -165,7 +185,7 @@ class InfoCommands(commands.Cog):
             )
             embed.set_thumbnail(url=ctx.author.display_avatar.url)
 
-            # ───────── ACCOUNT BASIC INFO ─────────
+            # ACCOUNT BASIC INFO
             embed.add_field(name="", value="\n".join([
                 "**┌  ACCOUNT BASIC INFO**",
                 f"**├─ Name**: {basic_info.get('nickname', 'Not found')}",
@@ -177,18 +197,18 @@ class InfoCommands(commands.Cog):
                 f"**└─ Signature**: {social_info.get('signature', 'None') or 'None'}"
             ]), inline=False)
 
-            # ───────── ACCOUNT ACTIVITY ─────────
+            # ACCOUNT ACTIVITY
             embed.add_field(name="", value="\n".join([
                 "**┌  ACCOUNT ACTIVITY**",
                 f"**├─ Most Recent OB**: {basic_info.get('releaseVersion', '?')}",
                 f"**├─ Current BP Badges**: {basic_info.get('badgeCnt', 'Not found')}",
-                f"**├─ BR Rank**: {basic_info.get('rankingPoints', '?')}",
-                f"**├─ CS Rank**: {basic_info.get('csRankingPoints', '?')}",
+                f"**├─ BR Rank**: {basic_info.get('rankingPoints', '?')} ",
+                f"**├─ CS Rank**: {basic_info.get('csRankingPoints', '?')} ",
                 f"**├─ Created At**: {self.convert_unix_timestamp(basic_info.get('createAt', 0))}",
                 f"**└─ Last Login**: {self.convert_unix_timestamp(basic_info.get('lastLoginAt', 0))}"
             ]), inline=False)
 
-            # ───────── ACCOUNT OVERVIEW ─────────
+            # ACCOUNT OVERVIEW
             embed.add_field(name="", value="\n".join([
                 "**┌  ACCOUNT OVERVIEW**",
                 f"**├─ Avatar ID**: {profile_info.get('avatarId', 'Not found')}",
@@ -197,7 +217,7 @@ class InfoCommands(commands.Cog):
                 f"**└─ Equipped Skills**: {profile_info.get('equipedSkills', 'Not found')}"
             ]), inline=False)
 
-            # ───────── PET DETAILS ─────────
+            # PET DETAILS
             embed.add_field(name="", value="\n".join([
                 "**┌  PET DETAILS**",
                 f"**├─ Equipped?**: {'Yes' if pet_info.get('isSelected') else 'Not Found'}",
@@ -207,10 +227,9 @@ class InfoCommands(commands.Cog):
             ]), inline=False)
 
             embed.set_footer(text="DEVELOPED BY MIDOU X CHEAT")
-
             await ctx.send(embed=embed)
 
-            # ───────── IMAGE ─────────
+            # IMAGE
             image_url = f"{self.generate_url}?uid={uid}"
             async with self.session.get(image_url) as img_file:
                 if img_file.status == 200:
@@ -225,7 +244,6 @@ class InfoCommands(commands.Cog):
 
     async def cog_unload(self):
         await self.session.close()
-
 
 async def setup(bot):
     await bot.add_cog(InfoCommands(bot))
